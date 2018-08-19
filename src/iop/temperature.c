@@ -56,7 +56,7 @@ DT_MODULE_INTROSPECTION(3, dt_iop_temperature_params_t)
 #define DT_IOP_LOWEST_TINT 0.135
 #define DT_IOP_HIGHEST_TINT 2.326
 
-#define DT_IOP_NUM_OF_STD_TEMP_PRESETS 3
+#define DT_IOP_NUM_OF_STD_TEMP_PRESETS 4
 
 #define COLORED_SLIDERS 0
 
@@ -194,6 +194,15 @@ static gboolean _set_preset_spot(GtkAccelGroup *accel_group, GObject *accelerata
   return TRUE;
 }
 
+static gboolean _set_preset_auto(GtkAccelGroup *accel_group, GObject *acceleratable, guint keyval,
+                                 GdkModifierType modifier, gpointer data)
+{
+  dt_iop_module_t *self = data;
+  dt_iop_temperature_gui_data_t *g = self->gui_data;
+  dt_bauhaus_combobox_set(g->presets, 2);
+  return TRUE;
+}
+
 void init_key_accels(dt_iop_module_so_t *self)
 {
   dt_accel_register_slider_iop(self, FALSE, NC_("accel", "tint"));
@@ -228,6 +237,9 @@ void connect_key_accels(dt_iop_module_t *self)
 
   closure = g_cclosure_new(G_CALLBACK(_set_preset_spot), (gpointer)self, NULL);
   dt_accel_connect_iop(self, "preset/spot", closure);
+
+  closure = g_cclosure_new(G_CALLBACK(_set_preset_auto), (gpointer)self, NULL);
+  dt_accel_connect_iop(self, "preset/auto", closure);
 }
 
 /*
@@ -758,6 +770,7 @@ void gui_update(struct dt_iop_module_t *self)
   dt_bauhaus_combobox_add(g->presets, C_("white balance", "camera"));
   dt_bauhaus_combobox_add(g->presets, C_("white balance", "camera neutral"));
   dt_bauhaus_combobox_add(g->presets, C_("white balance", "spot"));
+  dt_bauhaus_combobox_add(g->presets, C_("white balance", "auto"));
   g->preset_cnt = DT_IOP_NUM_OF_STD_TEMP_PRESETS;
   memset(g->preset_num, 0, sizeof(g->preset_num));
 
@@ -1247,6 +1260,8 @@ static void apply_preset(dt_iop_module_t *self)
   dt_iop_temperature_params_t *fp = (dt_iop_temperature_params_t *)self->default_params;
   const int tune = dt_bauhaus_slider_get(g->finetune);
   const int pos = dt_bauhaus_combobox_get(g->presets);
+  const dt_image_t *img = &self->dev->image_storage;
+
   switch(pos)
   {
     case -1: // just un-setting.
@@ -1265,6 +1280,28 @@ static void apply_preset(dt_iop_module_t *self)
       /* set the area sample size*/
       if(self->request_color_pick != DT_REQUEST_COLORPICK_OFF)
         dt_lib_colorpicker_set_area(darktable.lib, 0.99);
+
+      break;
+    case 3: // auto wb
+
+      {
+        dt_iop_roi_t roi = (dt_iop_roi_t){ 0, 0, img->width, img->height, 1.0 };
+
+        float picked_color[3];
+        float picked_color_min[3];
+        float picked_color_max[3];
+        int ret = dt_dev_pixelpipe_picker(self, &roi, picked_color,
+                                          picked_color_min, picked_color_max);
+        const float *grayrgb = picked_color;
+        for(int k = 0; k < 4; k++) p->coeffs[k] = (grayrgb[k] > 0.001f) ? 1.0f / grayrgb[k] : 1.0f;
+        // normalize green:
+        p->coeffs[0] /= p->coeffs[1];
+        p->coeffs[2] /= p->coeffs[1];
+        p->coeffs[3] /= p->coeffs[1];
+        p->coeffs[1] = 1.0;
+        // clamp
+        for(int k = 0; k < 4; k++) p->coeffs[k] = fmaxf(0.0f, fminf(8.0f, p->coeffs[k]));
+      }
 
       break;
     default: // camera WB presets

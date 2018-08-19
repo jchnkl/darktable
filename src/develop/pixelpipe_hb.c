@@ -501,6 +501,13 @@ static int pixelpipe_picker_helper(dt_iop_module_t *module, const dt_iop_roi_t *
   return 0;
 }
 
+int dt_dev_pixelpipe_picker(dt_iop_module_t *module, const dt_iop_roi_t *roi, float *picked_color,
+                            float *picked_color_min, float *picked_color_max)
+{
+  int box[4];
+  return pixelpipe_picker_helper(module, roi, picked_color, picked_color_min, picked_color_max, PIXELPIPE_PICKER_INPUT, box);
+}
+
 static void pixelpipe_picker(dt_iop_module_t *module, dt_iop_buffer_dsc_t *dsc, const float *pixel,
                              const dt_iop_roi_t *roi, float *picked_color, float *picked_color_min,
                              float *picked_color_max, dt_pixelpipe_picker_source_t picker_source)
